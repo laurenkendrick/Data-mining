@@ -1,0 +1,127 @@
+#Lauren Kendrick
+#August 17, 2018
+#Problem: Predict the purchase amount/value in a dataset about purchases obtained from the Analytics Vidhya practice problem page at https://datahack.analyticsvidhya.com/contest/black-friday/
+#Solution will be scored on root mean squared error
+
+from sklearn import tree
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+import csv
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+#Get training data
+purchasedata=pd.read_csv('train.csv')
+df=purchasedata.drop(['Purchase'],axis=1)
+target=purchasedata['Purchase']
+
+#check for missing values
+df.isnull().sum()  #Missing values in Product_Category_2, Product_Category_3
+target.isnull().sum() #No missing values
+df.fillna(0,inplace=True)
+
+#EXPLORE DATA
+
+#Distribution of target variable
+target.describe()
+
+#Histogram to look for shape of distribution
+bin_values=np.arange(start=0, stop=24000,step=1000)
+target.hist(bins=bin_values, figsize=[14,6])
+plt.show()
+#Peaks at 4,000, 6,000, 8,000 (center), 12,000, 16,000, 19,000
+
+#Look at correlation plot
+import seaborn as sns
+sns.pairplot(purchasedata)
+
+#Prepare data types
+df.dtypes
+#Objects need to be converted to integers or floats for sklearn
+#Convert numeric objects into integers
+stuff={"Stay_In_Current_City_Years": {'0':1,'1':2,'2':3,'3':4,'4+':5},"Age": {"0-17":17,"18-25":25,"26-35":35,"36-45":45,"46-50":50,"51-55":55,"55+":60}}
+df.replace(stuff,inplace=True)
+df["Product_ID"].describe()
+df["Product_ID"]=df["Product_ID"].str[1:]
+df["Product_ID"]=df["Product_ID"].astype('int')
+#Convert string objects into binary columns
+df["Gender"]=df["Gender"].astype('category')
+df=pd.get_dummies(df, columns=["Gender"])
+df["City_Category"]=df["City_Category"].astype('category')
+df=pd.get_dummies(df, columns=["City_Category"])
+
+#Split data into training and testing data
+df_train,df_test,target_train,target_test=train_test_split(df,target,test_size=0.2,random_state=1)
+
+#Data mining: Test whether Regression tree is useful
+clrt=tree.DecisionTreeRegressor()
+clrt=clrt.fit(df_train,target_train)
+
+#Show characteristics of tree
+import graphviz
+tree_data=tree.export_graphviz(clrt,out_file=None)
+graph=graphviz.Source(tree_data)
+graph.render("classifation_tree_initial")
+n_nodes = clrt.tree_.node_count
+children_left = clrt.tree_.children_left
+children_right = clrt.tree_.children_right
+feature = clrt.tree_.feature
+threshold = clrt.tree_.threshold
+
+pred_purchase=clrt.predict(df_test)
+# The mean squared error
+print("Mean squared error: %.2f"
+      % mean_squared_error(pred_purchase,target_test))
+#MSE 14084435.71
+#Mean error is $3752.92 for prototype tree model
+
+#Random Forests: Fit many Regression tree models with bootstrapping on sample subsets to avoid overfitting, then let the many models vote on the outcomes
+rf=RandomForestRegressor(n_estimators=20, criterion="mse", max_depth=15, bootstrap=True, random_state=1)
+rf_fitted=rf.fit(df_train,target_train)
+
+pred_purchase_rf=rf_fitted.predict(df_test)
+# The mean squared error
+print("Mean squared error: %.2f"
+      % mean_squared_error(pred_purchase_rf,target_test))
+#MSE 10421250.46 (max depth 5); 7815106.38 (max depth 10); 7424877.22 (max depth 15); 7568067.41 (max depth 20); 7901385.03 (max_depth 25); 8052181.46 (max depth 30)
+#Mean root squared error is $2712.65 for random forest regression tree model max depth 15, 20 trees
+#Top score in competition is MRSE $2405.93; $2712.65 would rank about 454th out of 1084 submissions
+
+#Plot predictions versus actual purchase amounts in test set
+plt.figure()
+plt.scatter(target_test,pred_purchase_rf) 
+plt.xlim([0, 25000])
+plt.ylim([0, 25000])
+plt.xlabel("Actual")
+plt.ylabel("Predicted")
+plt.title("Performance of random forest regression trees")
+plt.show()
+
+#Now try predicting on Analytics Vidya test set to compare accuracy to others trying the same challenge
+#Get reference test data
+testdata=pd.read_csv('test.csv')
+ID_columns=testdata[['User_ID','Product_ID']].copy()
+
+#check for missing values
+testdata.isnull().sum()  #Missing values in Product_Category_2, Product_Category_3
+testdata.fillna(0,inplace=True)
+
+#Prepare data types
+testdata.dtypes
+stuff={"Stay_In_Current_City_Years": {'0':1,'1':2,'2':3,'3':4,'4+':5},"Age": {"0-17":17,"18-25":25,"26-35":35,"36-45":45,"46-50":50,"51-55":55,"55+":60}}
+testdata.replace(stuff,inplace=True)
+testdata["Product_ID"].describe()
+testdata["Product_ID"]=testdata["Product_ID"].str[1:]
+testdata["Product_ID"]=testdata["Product_ID"].astype('int')
+testdata["Gender"]=testdata["Gender"].astype('category')
+testdata=pd.get_dummies(testdata, columns=["Gender"])
+testdata["City_Category"]=testdata["City_Category"].astype('category')
+testdata=pd.get_dummies(testdata, columns=["City_Category"])
+
+#Predict purchase amounts
+pred_purchase_rf_ref=rf_fitted.predict(testdata)
+ID_columns['Purchase']=pred_purchase_rf_ref
+ID_columns.to_csv('predicted.csv')
+#Then submit to https://datahack.analyticsvidhya.com/contest/black-friday/ to score
